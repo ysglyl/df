@@ -1,14 +1,15 @@
 package com.bzdnet.demo.df.core;
 
+import com.bzdnet.demo.df.annotation.DbColumn;
+import com.bzdnet.demo.df.annotation.DbID;
+import com.bzdnet.demo.df.annotation.DbTable;
 import com.bzdnet.demo.df.dao.BaseDao;
 import org.apache.commons.collections.map.HashedMap;
 import org.reflections.Reflections;
 import org.reflections.scanners.SubTypesScanner;
 
 import javax.sql.DataSource;
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
+import java.lang.reflect.*;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.Map;
@@ -25,25 +26,44 @@ public class DaoRegistry {
     public DaoRegistry() {
     }
 
-    public DaoRegistry(DataSource dataSource){
+    public DaoRegistry(DataSource dataSource) {
         this.dataSource = dataSource;
     }
 
-    public void addDao(Class dao) {
+    public void addDao(Class dao) throws Exception {
+        Type[] types = dao.getGenericInterfaces();
+        assert types.length == 1;
+        ParameterizedType baseDao = (ParameterizedType) types[0];
+        Type[] modelTypes = baseDao.getActualTypeArguments();
+        assert modelTypes.length == 1;
+        Class modelClass = (Class) modelTypes[0];
+        DbTable dbTable = (DbTable) modelClass.getDeclaredAnnotation(DbTable.class);
+        String tableName = dbTable.table();
+        Field[] fields = modelClass.getDeclaredFields();
+        for (Field field : fields) {
+            DbID dbID = field.getDeclaredAnnotation(DbID.class);
+            if (dbID != null) {
+
+            }
+            DbColumn dbColumn = field.getDeclaredAnnotation(DbColumn.class);
+            if (dbColumn != null) {
+
+            }
+        }
         Object proxy = Proxy.newProxyInstance(dao.getClassLoader(), new Class[]{dao}, new InvocationHandler() {
             @Override
             public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
                 if (Object.class.equals(method.getDeclaringClass())) {
                     return method.invoke(this, args);
                 }
+                assert dataSource != null;
+                Connection conn = dataSource.getConnection();
+                Statement statement = conn.createStatement();
                 switch (method.getName()) {
                     case "allList":
 
                         break;
                 }
-                Connection conn = dataSource.getConnection();
-                Statement statement = conn.createStatement();
-
                 return null;
             }
         });
@@ -54,7 +74,11 @@ public class DaoRegistry {
         Reflections reflections = new Reflections(pkgName, new SubTypesScanner());
         Set<Class<? extends BaseDao>> daoSet = reflections.getSubTypesOf(BaseDao.class);
         for (Class clazz : daoSet) {
-            addDao(clazz);
+            try {
+                addDao(clazz);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
         }
     }
 
