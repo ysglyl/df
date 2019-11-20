@@ -25,7 +25,6 @@ public class UserModel {
 
     @DbRelation(type = DbRelation.Type.Many2Many,
             refTable = "t_ref_user_role",
-            secondaryTable = "t_role",
             primary = "id_",
             refPrimary = "user_id_",
             refSecondary = "role_id_",
@@ -34,11 +33,16 @@ public class UserModel {
     private List<RoleModel> roleList;
 
     @DbRelation(type = DbRelation.Type.One2Many,
-            secondaryTable = "t_contact",
             primary = "id_",
             secondary = "user_id_"
     )
-    private ContactModel contact;
+    private List<ContactModel> contactList;
+
+    @DbRelation(type = DbRelation.Type.One2One,
+            primary = "id_",
+            secondary = "user_id_"
+    )
+    private StaffModel staff;
 
 
 }

@@ -20,7 +20,6 @@ public class RoleModel {
     private String name;
 
     @DbRelation(type = DbRelation.Type.Many2Many,
-            secondaryTable = "t_user",
             refTable = "t_ref_user_role",
             primary = "id_",
             refPrimary = "role_id_",

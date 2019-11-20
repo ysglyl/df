@@ -9,15 +9,13 @@ import lombok.ToString;
 
 @Data
 @ToString
-@DbTable(table = "t_contact")
-public class ContactModel {
+@DbTable(table = "t_staff")
+public class StaffModel {
 
     @DbID(column = "id_")
     private Long id;
-    @DbColumn(column = "phone_")
-    private String phone;
-    @DbColumn(column = "email_")
-    private String email;
+    @DbColumn(column = "staff_no_")
+    private String staffNo;
 
     @DbRelation(type = DbRelation.Type.One2One,
             primary = "user_id_",

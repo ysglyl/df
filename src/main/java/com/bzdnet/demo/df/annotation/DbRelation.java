@@ -9,7 +9,6 @@ import java.lang.annotation.*;
 public @interface DbRelation {
 
     Type type() default Type.One2One;
-    String secondaryTable() default "";
     String refTable() default "";
     String primary() default "";
     String refPrimary() default "";
