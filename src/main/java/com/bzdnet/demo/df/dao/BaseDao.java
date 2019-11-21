@@ -2,7 +2,7 @@ package com.bzdnet.demo.df.dao;
 
 import com.bzdnet.demo.df.form.PagedForm;
 import com.bzdnet.demo.df.result.PagedList;
-import com.bzdnet.demo.df.wrapper.Wrapper;
+import com.bzdnet.demo.df.core.wrapper.Wrapper;
 
 import java.util.List;
 

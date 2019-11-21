@@ -1,9 +1,9 @@
 package com.bzdnet.demo.df.model;
 
-import com.bzdnet.demo.df.annotation.DbColumn;
-import com.bzdnet.demo.df.annotation.DbID;
-import com.bzdnet.demo.df.annotation.DbRelation;
-import com.bzdnet.demo.df.annotation.DbTable;
+import com.bzdnet.demo.df.core.annotation.DbColumn;
+import com.bzdnet.demo.df.core.annotation.DbID;
+import com.bzdnet.demo.df.core.annotation.DbRelation;
+import com.bzdnet.demo.df.core.annotation.DbTable;
 import lombok.Data;
 import lombok.ToString;
 

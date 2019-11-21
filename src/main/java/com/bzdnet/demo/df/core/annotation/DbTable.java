@@ -1,4 +1,4 @@
-package com.bzdnet.demo.df.annotation;
+package com.bzdnet.demo.df.core.annotation;
 
 import java.lang.annotation.*;
 

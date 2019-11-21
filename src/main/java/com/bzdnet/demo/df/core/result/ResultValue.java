@@ -1,14 +1,11 @@
-package com.bzdnet.demo.df.core;
+package com.bzdnet.demo.df.core.result;
 
 import lombok.Data;
 
 @Data
-public class ResultID {
+public class ResultValue {
 
-    public ResultID() {
-    }
-
-    public ResultID(String property, String column,Class javaType) {
+    public ResultValue(String property, String column, Class javaType) {
         this.property = property;
         this.column = column;
         this.javaType=javaType;

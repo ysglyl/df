@@ -1,20 +1,19 @@
 package com.bzdnet.demo.df.core;
 
-import com.bzdnet.demo.df.annotation.DbColumn;
-import com.bzdnet.demo.df.annotation.DbID;
-import com.bzdnet.demo.df.annotation.DbRelation;
-import com.bzdnet.demo.df.annotation.DbTable;
+import com.bzdnet.demo.df.core.annotation.DbColumn;
+import com.bzdnet.demo.df.core.annotation.DbID;
+import com.bzdnet.demo.df.core.annotation.DbRelation;
+import com.bzdnet.demo.df.core.annotation.DbTable;
+import com.bzdnet.demo.df.core.model.KeyValuePair;
+import com.bzdnet.demo.df.core.result.ResultMap;
+import com.bzdnet.demo.df.core.result.ResultModel;
+import com.bzdnet.demo.df.core.result.ResultValue;
 import com.bzdnet.demo.df.dao.BaseDao;
-import org.apache.commons.collections.map.HashedMap;
 import org.reflections.Reflections;
 import org.reflections.scanners.SubTypesScanner;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import javax.sql.DataSource;
-import java.io.File;
 import java.lang.reflect.*;
-import java.sql.Connection;
-import java.sql.Statement;
 import java.util.*;
 
 /**
@@ -22,168 +21,16 @@ import java.util.*;
  */
 public class DaoRegistry {
 
-    Map<Class<? extends BaseDao>, Object> daoMap = new HashedMap();
-    JdbcTemplate jdbcTemplate;
+    private Map<Class<? extends BaseDao>, Object> daoMap = new HashMap<>();
+    private Map<String, Method> methodCache = new HashMap<>();
+    private Map<String, Object> tempCache = new HashMap<>();
+    private JdbcTemplate jdbcTemplate;
 
     public DaoRegistry() {
     }
 
     public DaoRegistry(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
-    }
-
-    public void addDao(Class dao) {
-        Type[] types = dao.getGenericInterfaces();
-        assert types.length == 1;
-        ParameterizedType baseDao = (ParameterizedType) types[0];
-        Type[] modelTypes = baseDao.getActualTypeArguments();
-        assert modelTypes.length == 1;
-        Class primaryModel = (Class) modelTypes[0];
-        DbTable primaryTable = (DbTable) primaryModel.getDeclaredAnnotation(DbTable.class);
-        String primaryTableName = primaryTable.table();
-        Field[] fields = primaryModel.getDeclaredFields();
-        List<String> selectColumns = new ArrayList<>();
-        List<String> leftJoinTables = new ArrayList<>();
-        ResultMap resultMap = new ResultMap();
-        for (Field field : fields) {
-            DbColumn primaryColumn = field.getDeclaredAnnotation(DbColumn.class);
-            if (primaryColumn != null) {
-                selectColumns.add(primaryTableName + "." + primaryColumn.column() + " " + primaryTableName + "_" + primaryColumn.column());
-                List<ResultSimple> simpleList = resultMap.getSimpleList();
-                if (simpleList == null) {
-                    simpleList = new ArrayList<>();
-                    resultMap.setSimpleList(simpleList);
-                }
-                simpleList.add(new ResultSimple(field.getName(), primaryTableName + "_" + primaryColumn.column(), field.getType()));
-            } else {
-                DbID primaryID = field.getDeclaredAnnotation(DbID.class);
-                if (primaryID != null) {
-                    selectColumns.add(primaryTableName + "." + primaryID.column() + " " + primaryTableName + "_" + primaryID.column());
-                    assert resultMap.getResultID() == null;
-                    resultMap.setResultID(new ResultID(field.getName(), primaryTableName + "_" + primaryID.column(), field.getType()));
-                } else {
-                    DbRelation dbRelation = field.getDeclaredAnnotation(DbRelation.class);
-                    if (dbRelation != null) {
-                        Class relationModel;
-                        List<ResultAssociation> associationList = resultMap.getAssociationList();
-                        List<ResultCollection> collectionList = resultMap.getCollectionList();
-                        if (field.getType() == List.class) {
-                            ParameterizedType parameterizedType = (ParameterizedType) field.getGenericType();
-                            relationModel = (Class) parameterizedType.getActualTypeArguments()[0];
-                            if (collectionList == null) {
-                                collectionList = new ArrayList<>();
-                                resultMap.setCollectionList(collectionList);
-                            }
-                        } else {
-                            relationModel = (Class) field.getGenericType();
-                            if (associationList == null) {
-                                associationList = new ArrayList<>();
-                                resultMap.setAssociationList(associationList);
-                            }
-                        }
-                        DbTable secondaryTable = (DbTable) relationModel.getDeclaredAnnotation(DbTable.class);
-                        String secondaryTableName = secondaryTable.table();
-                        Field[] secondaryFields = relationModel.getDeclaredFields();
-                        ResultID resultID = null;
-                        List<ResultSimple> simpleList = new ArrayList<>();
-                        for (Field secondaryField : secondaryFields) {
-                            DbColumn secondaryColumn = secondaryField.getDeclaredAnnotation(DbColumn.class);
-                            if (secondaryColumn != null) {
-                                selectColumns.add(secondaryTableName + "." + secondaryColumn.column() + " " + secondaryTableName + "_" + secondaryColumn.column());
-                                simpleList.add(new ResultSimple(secondaryField.getName(), secondaryTableName + "_" + secondaryColumn.column(), secondaryField.getType()));
-                            } else {
-                                DbID secondaryID = secondaryField.getDeclaredAnnotation(DbID.class);
-                                if (secondaryID != null) {
-                                    resultID = new ResultID(secondaryField.getName(), secondaryTableName + "_" + secondaryID.column(), secondaryField.getType());
-                                    selectColumns.add(secondaryTableName + "." + secondaryID.column() + " " + secondaryTableName + "_" + secondaryID.column());
-                                }
-                            }
-                        }
-                        switch (dbRelation.type()) {
-                            case One2One:
-                                leftJoinTables.add("left join " + secondaryTableName + " on " + primaryTableName + "." + dbRelation.primary() + "=" + secondaryTableName + "." + dbRelation.secondary());
-                                associationList.add(new ResultAssociation(field.getName(), relationModel, resultID, simpleList));
-                                break;
-                            case One2Many:
-                                leftJoinTables.add("left join " + secondaryTableName + " on " + primaryTableName + "." + dbRelation.primary() + "=" + secondaryTableName + "." + dbRelation.secondary());
-                                collectionList.add(new ResultCollection(field.getName(), relationModel, resultID, simpleList));
-                                break;
-                            case Many2Many:
-                                leftJoinTables.add("left join " + dbRelation.refTable() + " on " + primaryTableName + "." + dbRelation.primary() + "=" + dbRelation.refTable() + "." + dbRelation.refPrimary());
-                                leftJoinTables.add("left join " + secondaryTableName + " on " + secondaryTableName + "." + dbRelation.secondary() + "=" + dbRelation.refTable() + "." + dbRelation.refSecondary());
-                                collectionList.add(new ResultCollection(field.getName(), relationModel, resultID, simpleList));
-                                break;
-                        }
-                    }
-                }
-            }
-        }
-        Object proxy = Proxy.newProxyInstance(dao.getClassLoader(), new Class[]{dao}, new InvocationHandler() {
-            @Override
-            public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-                if (Object.class.equals(method.getDeclaringClass())) {
-                    return method.invoke(this, args);
-                }
-                switch (method.getName()) {
-                    case "allList":
-                        String sql = "select " + String.join(",", selectColumns) + " from " + primaryTableName + " " + String.join(" ", leftJoinTables);
-                        List<Map<String, Object>> list = jdbcTemplate.queryForList(sql);
-                        Map<String, Object> cache = new HashedMap();
-                        List<Object> resultList = new ArrayList<>();
-                        for (Map<String, Object> map : list) {
-                            ResultID resultID = resultMap.getResultID();
-                            List<ResultSimple> simpleList = resultMap.getSimpleList();
-                            List<ResultAssociation> associationList = resultMap.getAssociationList();
-                            List<ResultCollection> collectionList = resultMap.getCollectionList();
-                            Object id = map.get(resultID.getColumn());
-                            Object result = cache.get(String.valueOf(id));
-                            if (result == null) {
-                                result = primaryModel.newInstance();
-                                cache.put(String.valueOf(id), result);
-                                Method idMethod = primaryModel.getDeclaredMethod("set" + resultID.getProperty().substring(0, 1).toUpperCase() + resultID.getProperty().substring(1), resultID.getJavaType());
-                                idMethod.invoke(result, id);
-                                if (simpleList != null) {
-                                    for (ResultSimple simple : simpleList) {
-                                        Method columnMethod = primaryModel.getDeclaredMethod("set" + simple.getProperty().substring(0, 1).toUpperCase() + simple.getProperty().substring(1), simple.getJavaType());
-                                        columnMethod.invoke(result, map.get(simple.getColumn()));
-                                    }
-                                }
-                                resultList.add(result);
-                            }
-                            if (associationList != null) {
-                                for (ResultAssociation association : associationList) {
-                                    ResultID associationResultID = association.getResultID();
-                                    Object associationID = map.get(associationResultID.getColumn());
-                                    if (associationID == null) {
-                                        continue;
-                                    }
-                                    Object associationResult = cache.get(id + "__" + associationID);
-                                    if (associationResult == null) {
-                                        associationResult = association.getModelClass().newInstance();
-                                        cache.put(id + "__" + associationID, associationResult);
-
-                                        Method associationIdMethod = association.getModelClass().getDeclaredMethod("set" + associationResultID.getProperty().substring(0, 1).toUpperCase() + associationResultID.getProperty().substring(1), associationResultID.getJavaType());
-                                        associationIdMethod.invoke(associationResult, associationID);
-                                        if (association.getSimpleList() != null) {
-                                            for (ResultSimple simple : association.getSimpleList()) {
-                                                Method columnMethod = association.getModelClass().getDeclaredMethod("set" + simple.getProperty().substring(0, 1).toUpperCase() + simple.getProperty().substring(1), simple.getJavaType());
-                                                columnMethod.invoke(associationResult, map.get(simple.getColumn()));
-                                            }
-                                        }
-
-                                        Method associationMethod = primaryModel.getDeclaredMethod("set" + resultID.getProperty().substring(0, 1).toUpperCase() + resultID.getProperty().substring(1), association.getModelClass());
-                                        associationMethod.invoke(result, associationResult);
-                                    }
-                                }
-                            }
-
-                        }
-                        return resultList;
-                }
-                return null;
-            }
-        });
-        daoMap.put(dao, proxy);
     }
 
     public void addDaoInPackage(String pkgName) {
@@ -194,9 +41,343 @@ public class DaoRegistry {
         }
     }
 
+    private void addDao(Class dao) {
+        Type[] types = dao.getGenericInterfaces();
+        ParameterizedType baseDao = (ParameterizedType) types[0];
+        Type[] modelTypes = baseDao.getActualTypeArguments();
+        Class primaryModel = (Class) modelTypes[0];
+        ResultMap resultMap = getResultMapFromModel(primaryModel);
+        Object proxy = Proxy.newProxyInstance(dao.getClassLoader(), new Class[]{dao}, new InvocationHandler() {
+            @Override
+            public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                if (Object.class.equals(method.getDeclaringClass())) {
+                    return method.invoke(this, args);
+                }
+                switch (method.getName()) {
+                    case "allList":
+                        return getModelFromResultList(resultMap, queryList(resultMap, args));
+                    case "pageList":
+
+                        return null;
+                    case "detailById":
+
+                        return null;
+                    case "insert":
+
+                        return 0;
+                    case "insertBatch":
+
+                        return 0;
+                    case "updateById":
+
+                        return 0;
+                    case "updateBatchById":
+
+                        return 0;
+                    case "update":
+
+                        return 0;
+                    case "updateBatch":
+
+                        return 0;
+                    case "deleteById":
+
+                        return 0;
+                    case "delete":
+
+                        return 0;
+                }
+                return null;
+            }
+        });
+        daoMap.put(dao, proxy);
+    }
+
     public <T extends BaseDao> T getDao(Class<T> dao) {
         return (T) daoMap.get(dao);
     }
 
+    /**
+     * 获取缓存方法
+     *
+     * @param clazz
+     * @param name
+     * @param args
+     * @return
+     */
+    private Method getCachedMethod(Class clazz, String name, Class... args) {
+        try {
+            Method method = methodCache.get(clazz.getName() + ".set" + name.substring(0, 1).toUpperCase() + name.substring(1));
+            if (method == null) {
+                method = clazz.getDeclaredMethod("set" + name.substring(0, 1).toUpperCase() + name.substring(1), args);
+                methodCache.put(clazz.getName() + ".set" + name.substring(0, 1).toUpperCase() + name.substring(1), method);
+            }
+            return method;
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        return null;
+    }
+
+    private String getSelectSql(String fromTable, List<String> leftJoinTables, List<String> selectColumns) {
+        StringBuilder sb = new StringBuilder("select ");
+        sb.append(String.join(",", selectColumns));
+        sb.append(" from ");
+        sb.append(fromTable);
+        sb.append(" ");
+        sb.append(String.join(" ", leftJoinTables));
+        return sb.toString();
+    }
+
+    private String getCountSql(String fromTable, List<String> leftJoinTables) {
+        StringBuilder sb = new StringBuilder("select count(1) from ");
+        sb.append(fromTable);
+        sb.append(" ");
+        sb.append(String.join(" ", leftJoinTables));
+        return sb.toString();
+    }
+
+    private String getLimitSql(long page, long pageSize) {
+        long offset = (page - 1) * pageSize;
+        return "limit " + offset + " " + pageSize;
+    }
+
+    private String getWhereSql() {
+        StringBuilder sb = new StringBuilder();
+        return sb.toString();
+    }
+
+    private List<Map<String, Object>> queryList(ResultMap resultMap,Object[] args) {
+        List<String> selectColumns = new ArrayList<>();
+        List<String> leftJoinTables = new ArrayList<>();
+        String primaryTableName = resultMap.getTableName();
+        if(args!=null){
+
+        }
+        selectColumns.add(primaryTableName + "." + resultMap.getId().getColumn() + " " + primaryTableName + "_" + resultMap.getId().getColumn());
+        for (ResultValue resultValue : resultMap.getColumns()) {
+            selectColumns.add(primaryTableName + "." + resultValue.getColumn() + " " + primaryTableName + "_" + resultValue.getColumn());
+        }
+        for (ResultModel resultModel : resultMap.getAssociations()) {
+            selectColumns.add(resultModel.getTableName() + "." + resultModel.getId().getColumn() + " " + resultModel.getTableName() + "_" + resultModel.getId().getColumn());
+            for (ResultValue resultValue : resultModel.getColumns()) {
+                selectColumns.add(resultModel.getTableName() + "." + resultValue.getColumn() + " " + resultModel.getTableName() + "_" + resultValue.getColumn());
+            }
+            leftJoinTables.add("left join " + resultModel.getTableName() + " on " + primaryTableName + "." + resultModel.getRelation().getKey() + "=" + resultModel.getTableName() + "." + resultModel.getRelation().getValue());
+        }
+        for (ResultModel resultModel : resultMap.getCollections()) {
+            selectColumns.add(resultModel.getTableName() + "." + resultModel.getId().getColumn() + " " + resultModel.getTableName() + "_" + resultModel.getId().getColumn());
+            for (ResultValue resultValue : resultModel.getColumns()) {
+                selectColumns.add(resultModel.getTableName() + "." + resultValue.getColumn() + " " + resultModel.getTableName() + "_" + resultValue.getColumn());
+            }
+            if (resultModel.getRelation() == null) { //如果为null则使用中间表作为关系
+                leftJoinTables.add("left join " + resultModel.getRefTableName() + " on " + primaryTableName + "." + resultModel.getRefPrimary().getKey() + "=" + resultModel.getRefTableName() + "." + resultModel.getRefPrimary().getValue());
+                leftJoinTables.add("left join " + resultModel.getTableName() + " on " + resultModel.getTableName() + "." + resultModel.getRefSecondary().getKey() + "=" + resultModel.getRefTableName() + "." + resultModel.getRefSecondary().getValue());
+            } else {
+                leftJoinTables.add("left join " + resultModel.getTableName() + " on " + primaryTableName + "." + resultModel.getRelation().getKey() + "=" + resultModel.getTableName() + "." + resultModel.getRelation().getValue());
+            }
+        }
+        String sql = "select " + String.join(",", selectColumns) + " from " + primaryTableName + " " + String.join(" ", leftJoinTables);
+        List<Map<String, Object>> list = jdbcTemplate.queryForList(sql);
+        return list;
+    }
+
+
+    /**
+     * 根据实体类型，生产映射关系
+     *
+     * @param model
+     * @return
+     */
+    private ResultMap getResultMapFromModel(Class model) {
+        // 获取主表名称
+        DbTable primaryTable = (DbTable) model.getDeclaredAnnotation(DbTable.class);
+        String primaryTableName = primaryTable.table();
+        ResultMap resultMap = new ResultMap();
+        resultMap.setTableName(primaryTableName);
+        resultMap.setType(model);
+
+        Field[] primaryFields = model.getDeclaredFields();
+        for (Field primaryField : primaryFields) {
+            DbColumn primaryColumn = primaryField.getDeclaredAnnotation(DbColumn.class);
+            if (primaryColumn != null) {
+                List<ResultValue> primaryColumns = resultMap.getColumns();
+                if (primaryColumns == null) {
+                    primaryColumns = new ArrayList<>();
+                    resultMap.setColumns(primaryColumns);
+                }
+                primaryColumns.add(new ResultValue(primaryField.getName(), primaryColumn.column(), primaryField.getType()));
+            } else {
+                DbID primaryId = primaryField.getDeclaredAnnotation(DbID.class);
+                if (primaryId != null) {
+                    resultMap.setId(new ResultValue(primaryField.getName(), primaryId.column(), primaryField.getType()));
+                } else {
+                    DbRelation primaryRelation = primaryField.getDeclaredAnnotation(DbRelation.class);
+                    if (primaryRelation != null) {
+                        Class relationModel;
+                        List<ResultModel> associations = resultMap.getAssociations();
+                        List<ResultModel> collections = resultMap.getCollections();
+                        if (primaryField.getType() == List.class) {
+                            ParameterizedType parameterizedType = (ParameterizedType) primaryField.getGenericType();
+                            relationModel = (Class) parameterizedType.getActualTypeArguments()[0];
+                            if (collections == null) {
+                                collections = new ArrayList<>();
+                                resultMap.setCollections(collections);
+                            }
+                        } else {
+                            relationModel = (Class) primaryField.getGenericType();
+                            if (associations == null) {
+                                associations = new ArrayList<>();
+                                resultMap.setAssociations(associations);
+                            }
+                        }
+                        DbTable secondaryTable = (DbTable) relationModel.getDeclaredAnnotation(DbTable.class);
+                        String secondaryTableName = secondaryTable.table();
+                        Field[] secondaryFields = relationModel.getDeclaredFields();
+                        ResultValue secondaryId = null;
+                        List<ResultValue> secondaryColumns = new ArrayList<>();
+                        for (Field secondaryField : secondaryFields) {
+                            DbColumn secondaryColumn = secondaryField.getDeclaredAnnotation(DbColumn.class);
+                            if (secondaryColumn != null) {
+                                secondaryColumns.add(new ResultValue(secondaryField.getName(), secondaryColumn.column(), secondaryField.getType()));
+                            } else {
+                                DbID secondaryIdA = secondaryField.getDeclaredAnnotation(DbID.class);
+                                if (secondaryIdA != null) {
+                                    secondaryId = new ResultValue(secondaryField.getName(), secondaryIdA.column(), secondaryField.getType());
+                                }
+                            }
+                        }
+                        switch (primaryRelation.type()) {
+                            case One2One:
+                                associations.add(new ResultModel(
+                                        primaryField.getName(),
+                                        relationModel,
+                                        secondaryTableName,
+                                        secondaryId,
+                                        secondaryColumns,
+                                        new KeyValuePair(primaryRelation.primary(), primaryRelation.secondary())
+                                ));
+                                break;
+                            case One2Many:
+                                collections.add(new ResultModel(
+                                        primaryField.getName(),
+                                        relationModel,
+                                        secondaryTableName,
+                                        secondaryId,
+                                        secondaryColumns,
+                                        new KeyValuePair(primaryRelation.primary(), primaryRelation.secondary())
+                                ));
+                                break;
+                            case Many2Many:
+                                collections.add(new ResultModel(
+                                        primaryField.getName(),
+                                        relationModel,
+                                        secondaryTableName,
+                                        secondaryId,
+                                        secondaryColumns,
+                                        primaryRelation.refTable(),
+                                        new KeyValuePair(primaryRelation.primary(), primaryRelation.refPrimary()),
+                                        new KeyValuePair(primaryRelation.secondary(), primaryRelation.refSecondary())
+                                ));
+                                break;
+                        }
+                    }
+                }
+            }
+        }
+        return resultMap;
+    }
+
+    /**
+     * 将结果集转换成Model
+     *
+     * @param resultMap
+     * @param list
+     * @return
+     * @throws Exception
+     */
+    private List<Object> getModelFromResultList(ResultMap resultMap, List<Map<String, Object>> list) throws Exception {
+        List<Object> resultList = new ArrayList<>();
+        for (Map<String, Object> map : list) {
+            String table = resultMap.getTableName();
+            ResultValue id = resultMap.getId();
+            List<ResultValue> columns = resultMap.getColumns();
+            List<ResultModel> associations = resultMap.getAssociations();
+            List<ResultModel> collections = resultMap.getCollections();
+            Object idValue = map.get(table + "_" + id.getColumn());
+            Object result = tempCache.get(String.valueOf(idValue));
+            if (result == null) {
+                result = resultMap.getType().newInstance();
+                tempCache.put(String.valueOf(idValue), result);
+                Method idMethod = getCachedMethod(resultMap.getType(), id.getProperty(), id.getJavaType());
+                idMethod.invoke(result, idValue);
+                if (columns != null) {
+                    for (ResultValue column : columns) {
+                        Method columnMethod = getCachedMethod(resultMap.getType(), column.getProperty(), column.getJavaType());
+                        columnMethod.invoke(result, map.get(table + "_" + column.getColumn()));
+                    }
+                }
+                resultList.add(result);
+            }
+            if (associations != null) {
+                for (ResultModel association : associations) {
+                    String associationTable = association.getTableName();
+                    ResultValue associationId = association.getId();
+                    Object associationIdValue = map.get(associationTable + "_" + associationId.getColumn());
+                    if (associationIdValue == null) {
+                        continue;
+                    }
+                    Object associationModel = tempCache.get(idValue + "_A_" + associationTable + "_" + associationId.getColumn());
+                    if (associationModel == null) {
+                        associationModel = association.getModelClass().newInstance();
+                        tempCache.put(idValue + "_A_" + associationTable + "_" + associationId.getColumn(), associationModel);
+
+                        Method associationIdMethod = getCachedMethod(association.getModelClass(), associationId.getProperty(), associationId.getJavaType());
+                        associationIdMethod.invoke(associationModel, associationIdValue);
+                        if (association.getColumns() != null) {
+                            for (ResultValue column : association.getColumns()) {
+                                Method columnMethod = getCachedMethod(association.getModelClass(), column.getProperty(), column.getJavaType());
+                                columnMethod.invoke(associationModel, map.get(associationTable + "_" + column.getColumn()));
+                            }
+                        }
+                        Method associationMethod = getCachedMethod(resultMap.getType(), association.getProperty(), association.getModelClass());
+                        associationMethod.invoke(result, associationModel);
+                    }
+                }
+            }
+            if (collections != null) {
+                for (ResultModel collection : collections) {
+                    String collectionTable = collection.getTableName();
+                    ResultValue collectionId = collection.getId();
+                    Object collectionIdValue = map.get(collectionTable + "_" + collectionId.getColumn());
+                    if (collectionIdValue == null) {
+                        continue;
+                    }
+                    List collectionModelList = (ArrayList) tempCache.get(idValue + "_L_" + collectionTable + "_" + collectionId.getColumn());
+                    if (collectionModelList == null) {
+                        collectionModelList = new ArrayList();
+                        tempCache.put(idValue + "_L_" + collectionTable + "_" + collectionId.getColumn(), collectionModelList);
+
+                        Method collectionMethod = getCachedMethod(resultMap.getType(), collection.getProperty(), List.class);
+                        collectionMethod.invoke(result, collectionModelList);
+                    }
+                    if (!tempCache.containsKey(idValue + "_L_" + collectionTable + "_" + collectionId.getColumn() + "_" + collectionIdValue)) {
+                        tempCache.put(idValue + "_L_" + collectionTable + "_" + collectionId.getColumn() + "_" + collectionIdValue, null);
+                        Object collectionModel = collection.getModelClass().newInstance();
+                        Method collectionIdMethod = getCachedMethod(collection.getModelClass(), collectionId.getProperty(), collectionId.getJavaType());
+                        collectionIdMethod.invoke(collectionModel, collectionIdValue);
+                        if (collection.getColumns() != null) {
+                            for (ResultValue column : collection.getColumns()) {
+                                Method columnMethod = getCachedMethod(collection.getModelClass(), column.getProperty(), column.getJavaType());
+                                columnMethod.invoke(collectionModel, map.get(collectionTable + "_" + column.getColumn()));
+                            }
+                        }
+                        collectionModelList.add(collectionModel);
+                    }
+                }
+            }
+        }
+        return resultList;
+    }
 
 }

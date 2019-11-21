@@ -1,4 +1,4 @@
-package com.bzdnet.demo.df.annotation;
+package com.bzdnet.demo.df.core.annotation;
 
 import java.lang.annotation.*;
 
@@ -6,7 +6,7 @@ import java.lang.annotation.*;
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @Inherited
-public @interface DbColumn {
+public @interface DbID {
 
     String column() default "";
 

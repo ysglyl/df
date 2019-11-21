@@ -1,4 +1,4 @@
-package com.bzdnet.demo.df.wrapper;
+package com.bzdnet.demo.df.core.wrapper;
 
 public class QueryWrapper implements Wrapper {
 }
