@@ -8,6 +8,7 @@ import com.bzdnet.demo.df.core.model.KeyValuePair;
 import com.bzdnet.demo.df.core.result.ResultMap;
 import com.bzdnet.demo.df.core.result.ResultModel;
 import com.bzdnet.demo.df.core.result.ResultValue;
+import com.bzdnet.demo.df.core.wrapper.QueryWrapper;
 import com.bzdnet.demo.df.dao.BaseDao;
 import org.reflections.Reflections;
 import org.reflections.scanners.SubTypesScanner;
@@ -152,7 +153,8 @@ public class DaoRegistry {
         List<String> leftJoinTables = new ArrayList<>();
         String primaryTableName = resultMap.getTableName();
         if(args!=null){
-
+            QueryWrapper queryWrapper = (QueryWrapper) args[0];
+            System.out.equals(queryWrapper);
         }
         selectColumns.add(primaryTableName + "." + resultMap.getId().getColumn() + " " + primaryTableName + "_" + resultMap.getId().getColumn());
         for (ResultValue resultValue : resultMap.getColumns()) {
