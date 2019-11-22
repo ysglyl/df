@@ -27,11 +27,12 @@ public class DfApplication {
                 DaoRegistry daoRegistry = ((ApplicationReadyEvent) applicationEvent).getApplicationContext().getBean("daoRegistry", DaoRegistry.class);
                 UserDao userDao = daoRegistry.getDao(UserDao.class);
 
-                QueryWrapper queryWrapper = Wrapper.query().eq("1", 1).notEq("2",2).and().lt("3", 3).or().in("4", "2","3");
-                List<UserModel> list = userDao.allList(queryWrapper);
-                for (UserModel user:list){
+                Wrapper wrapper = new QueryWrapper(UserModel.class).eq("1", 1).notEq("2", 2).and().eq("3", 3).notEq("4", "4").or().eq("5", 5).notEq("6", 6);
+                List<UserModel> list = userDao.allList(wrapper);
+                for (UserModel user : list) {
                     System.out.println(user);
                 }
+
             }
         });
         app.run(args);

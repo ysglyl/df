@@ -4,11 +4,13 @@ import com.bzdnet.demo.df.core.annotation.DbColumn;
 import com.bzdnet.demo.df.core.annotation.DbID;
 import com.bzdnet.demo.df.core.annotation.DbRelation;
 import com.bzdnet.demo.df.core.annotation.DbTable;
+import com.bzdnet.demo.df.core.model.Condition;
 import com.bzdnet.demo.df.core.model.KeyValuePair;
 import com.bzdnet.demo.df.core.result.ResultMap;
 import com.bzdnet.demo.df.core.result.ResultModel;
 import com.bzdnet.demo.df.core.result.ResultValue;
 import com.bzdnet.demo.df.core.wrapper.QueryWrapper;
+import com.bzdnet.demo.df.core.wrapper.Wrapper;
 import com.bzdnet.demo.df.dao.BaseDao;
 import org.reflections.Reflections;
 import org.reflections.scanners.SubTypesScanner;
@@ -22,7 +24,7 @@ import java.util.*;
  */
 public class DaoRegistry {
 
-    private Map<Class<? extends BaseDao>, Object> daoMap = new HashMap<>();
+    private Map<Class, Object> daoMap = new HashMap<>();
     private Map<String, Method> methodCache = new HashMap<>();
     private Map<String, Object> tempCache = new HashMap<>();
     private JdbcTemplate jdbcTemplate;
@@ -94,7 +96,7 @@ public class DaoRegistry {
         daoMap.put(dao, proxy);
     }
 
-    public <T extends BaseDao> T getDao(Class<T> dao) {
+    public <T> T getDao(Class dao) {
         return (T) daoMap.get(dao);
     }
 
@@ -143,19 +145,50 @@ public class DaoRegistry {
         return "limit " + offset + " " + pageSize;
     }
 
-    private String getWhereSql() {
+    private String getWhereSql(Wrapper wrapper) {
         StringBuilder sb = new StringBuilder();
-        return sb.toString();
+        List<String> whereList = new ArrayList<>();
+        List<Condition> conditions = wrapper.getConditions();
+        List<Wrapper> ands = wrapper.getAnds();
+        List<Wrapper> ors = wrapper.getOrs();
+        for (Condition condition : conditions) {
+            whereList.add(condition.getTable() + "." + condition.getColumn() + condition.getOperator().getOperator().replace("{}", String.valueOf(condition.getValue())));
+        }
+        sb.append(String.join(" and ", whereList));
+        whereList.clear();
+        for (Wrapper and : ands) {
+            List<Condition> andCondition = and.getConditions();
+            if (andCondition.size() > 0) {
+                sb.append(" and ");
+                for (Condition condition : andCondition) {
+                    whereList.add(condition.getTable() + "." + condition.getColumn() + condition.getOperator().getOperator().replace("{}", String.valueOf(condition.getValue())));
+                }
+                sb.append("(");
+                sb.append(String.join(" and ", whereList));
+                sb.append(")");
+                whereList.clear();
+            }
+        }
+        for (Wrapper or : ors) {
+            List<Condition> orCondition = or.getConditions();
+            if (orCondition.size() > 0) {
+                sb.append(" or ");
+                for (Condition condition : orCondition) {
+                    whereList.add(condition.getTable() + "." + condition.getColumn() + condition.getOperator().getOperator().replace("{}", String.valueOf(condition.getValue())));
+                }
+                sb.append("(");
+                sb.append(String.join(" and ", whereList));
+                sb.append(")");
+                whereList.clear();
+            }
+        }
+        return sb.toString().trim().length() > 0 ? "where " + sb.toString() : "";
     }
 
-    private List<Map<String, Object>> queryList(ResultMap resultMap,Object[] args) {
+    private List<Map<String, Object>> queryList(ResultMap resultMap, Object[] args) {
         List<String> selectColumns = new ArrayList<>();
         List<String> leftJoinTables = new ArrayList<>();
         String primaryTableName = resultMap.getTableName();
-        if(args!=null){
-            QueryWrapper queryWrapper = (QueryWrapper) args[0];
-            System.out.equals(queryWrapper);
-        }
         selectColumns.add(primaryTableName + "." + resultMap.getId().getColumn() + " " + primaryTableName + "_" + resultMap.getId().getColumn());
         for (ResultValue resultValue : resultMap.getColumns()) {
             selectColumns.add(primaryTableName + "." + resultValue.getColumn() + " " + primaryTableName + "_" + resultValue.getColumn());
@@ -180,6 +213,10 @@ public class DaoRegistry {
             }
         }
         String sql = "select " + String.join(",", selectColumns) + " from " + primaryTableName + " " + String.join(" ", leftJoinTables);
+        if (args != null) {
+            QueryWrapper queryWrapper = (QueryWrapper) args[0];
+            sql += " " + getWhereSql(queryWrapper);
+        }
         List<Map<String, Object>> list = jdbcTemplate.queryForList(sql);
         return list;
     }

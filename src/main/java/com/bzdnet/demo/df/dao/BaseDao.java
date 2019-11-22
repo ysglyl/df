@@ -1,6 +1,5 @@
 package com.bzdnet.demo.df.dao;
 
-import com.bzdnet.demo.df.core.wrapper.QueryWrapper;
 import com.bzdnet.demo.df.core.wrapper.Wrapper;
 import com.bzdnet.demo.df.form.PagedForm;
 import com.bzdnet.demo.df.result.PagedList;
@@ -11,7 +10,7 @@ public interface BaseDao<T> {
 
     List<T> allList();
 
-    List<T> allList(QueryWrapper wrapper);
+    List<T> allList(Wrapper wrapper);
 
     PagedList<T> pageList(PagedForm form);
 
